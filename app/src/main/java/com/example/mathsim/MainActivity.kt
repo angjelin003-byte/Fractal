@@ -22,6 +22,31 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.abs
+import kotlin.system.exitProcess
+
+data class Vec3(val x: Float, val y: Float, val z: Float) {
+    fun dot(o: Vec3) = x * o.x + y * o.y + z * o.z
+    fun cross(o: Vec3) = Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x)
+    fun norm() = sqrt(x * x + y * y + z * z)
+    fun normalize(): Vec3 {
+        val n = norm()
+        return if (n > 0) Vec3(x / n, y / n, z / n) else Vec3(0f, 0f, 0f)
+    }
+    operator fun plus(o: Vec3) = Vec3(x + o.x, y + o.y, z + o.z)
+    operator fun times(s: Float) = Vec3(x * s, y * s, z * s)
+}
+
+fun getOrthogonalBasis(v: Vec3): Pair<Vec3, Vec3> {
+    val vn = v.normalize()
+    var up = Vec3(0f, 1f, 0f)
+    if (abs(vn.dot(up)) > 0.99f) {
+        up = Vec3(1f, 0f, 0f)
+    }
+    val u1 = vn.cross(up).normalize()
+    val u2 = vn.cross(u1)
+    return Pair(u1, u2)
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,7 +58,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MathSim() {
     var showOptions by remember { mutableStateOf(true) }
-    var expansion by remember { mutableStateOf(20f) }
+    var expansion by remember { mutableStateOf(5f) }
     var hue by remember { mutableStateOf(120f) }
     var lines by remember { mutableStateOf(50f) }
     var spin by remember { mutableStateOf(0f) }
@@ -45,49 +70,31 @@ fun MathSim() {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cx = size.width / 2
             val cy = size.height / 2
-            val numIterations = (lines * 100).toInt()
+            val numIterations = (lines * 20).toInt()
             
             val path = Path()
             var currentX = cx
             var currentY = cy
             path.moveTo(currentX, currentY)
             
-            // Initial vector (V0)
-            var vx = 0f
-            var vy = -1f
+            var vn = Vec3(0f, -1f, 0f)
             
-            // ψ = π(3 - √5) ≈ 137.5°
-            val psi = Math.PI * (3.0 - Math.sqrt(5.0))
-            
-            // θ = 0.55 + spin (0 in the middle of the slider)
-            val baseTheta = 0.55 + spin
-            val cosTheta = cos(baseTheta).toFloat()
-            val sinTheta = sin(baseTheta).toFloat()
+            val psi = (Math.PI * (3.0 - sqrt(5.0))).toFloat()
+            val theta = 0.55f + spin
+            val cosTheta = cos(theta)
+            val sinTheta = sin(theta)
             
             for (i in 0 until numIterations) {
-                // u(n*ψ)
-                val angle = i * psi
-                val ux = cos(angle).toFloat()
-                val uy = sin(angle).toFloat()
+                val (u1, u2) = getOrthogonalBasis(vn)
                 
-                // Vn+1 = cos(θ)*Vn + sin(θ)*u(n*ψ)
-                var nvx = cosTheta * vx + sinTheta * ux
-                var nvy = cosTheta * vy + sinTheta * uy
+                val currentPsi = i * psi
+                val uPsi = (u1 * cos(currentPsi)) + (u2 * sin(currentPsi))
                 
-                // norm
-                val len = sqrt(nvx * nvx + nvy * nvy)
-                if (len > 0) {
-                    nvx /= len
-                    nvy /= len
-                }
+                val vNext = (vn * cosTheta) + (uPsi * sinTheta)
+                vn = vNext.normalize()
                 
-                vx = nvx
-                vy = nvy
-                
-                // Calculate next point
-                val segLength = expansion * 0.2f
-                currentX += vx * segLength
-                currentY += vy * segLength
+                currentX += vn.x * expansion
+                currentY += vn.y * expansion
                 
                 path.lineTo(currentX, currentY)
             }
@@ -95,7 +102,7 @@ fun MathSim() {
             drawPath(
                 path = path,
                 color = Color.White,
-                style = Stroke(width = 2f)
+                style = Stroke(width = 1.5f)
             )
         }
 
@@ -113,19 +120,22 @@ fun MathSim() {
                     color = Color.White,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp).clickable { context.finish() }
+                    modifier = Modifier.padding(16.dp).clickable {
+                        context.finishAffinity()
+                        exitProcess(0)
+                    }
                 )
             }
             if (showOptions) {
                 Column(modifier = Modifier.background(Color(0xAA000000)).padding(16.dp)) {
                     Text("Angle/Expansion", color = Color.White)
-                    Slider(value = expansion, onValueChange = { expansion = it }, valueRange = 1f..100f)
+                    Slider(value = expansion, onValueChange = { expansion = it }, valueRange = 1f..50f)
                     Text("Hue", color = Color.White)
                     Slider(value = hue, onValueChange = { hue = it }, valueRange = 0f..360f)
                     Text("Lines Multiplier", color = Color.White)
-                    Slider(value = lines, onValueChange = { lines = it }, valueRange = 10f..200f)
+                    Slider(value = lines, onValueChange = { lines = it }, valueRange = 1f..300f)
                     Text("Spin (θ)", color = Color.White)
-                    Slider(value = spin, onValueChange = { spin = it }, valueRange = -1f..1f)
+                    Slider(value = spin, onValueChange = { spin = it }, valueRange = -1.5f..1.5f)
                 }
             }
         }
